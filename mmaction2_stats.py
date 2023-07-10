@@ -1,8 +1,10 @@
 import glob
+import os
 import os.path as osp
 import pickle
 from dataclasses import dataclass
 from multiprocessing import Pool
+from mmengine import track_parallel_progress
 from typing import Optional
 
 import pandas as pd
@@ -16,8 +18,8 @@ from pdfminer.pdfparser import PDFSyntaxError
 class paper_info:
     title: str
     conference: str
-    year: int
     authors: str
+    year: Optional[str] = None
     abstract: Optional[str] = None
     pdf_path: Optional[str] = None
     pdf_url: Optional[str] = None
@@ -42,6 +44,7 @@ def load_paper_info(index_path: str = 'index'):
         df = pd.read_csv(fn)
 
         for _, item in tqdm.tqdm(df.iterrows(), total=len(df) - 1):
+            item['year'] = 2023
             paper = paper_info(title=item['title'],
                                conference=item['conference'],
                                year=item['year'],
@@ -69,7 +72,7 @@ def _download(args):
     url = paper.pdf_url
     path = paper.pdf_path
     try:
-        print(f'{idx}/{total}')
+        # print(f'{idx}/{total}')
         wget.download(url, path, bar=None)
         return None
     except:  # noqa
@@ -81,12 +84,15 @@ def download_missing_pdf(papers):
     missing_list = [
         paper for paper in papers if not osp.isfile(paper.pdf_path)
     ]
+    [os.makedirs(osp.dirname(paper.pdf_path), exist_ok=True) for paper in papers]
+
     print(f'found {len(missing_list)} missing papers.')
 
-    with Pool() as p:
-        total = len(missing_list)
-        tasks = [(i, total, paper) for i, paper in enumerate(missing_list)]
-        failed_list = [r for r in p.map(_download, tasks) if r is not None]
+    # with Pool() as p:
+    total = len(missing_list)
+    tasks = [(i, total, paper) for i, paper in enumerate(missing_list)]
+    # failed_list = [r for r in p.map(_download, tasks) if r is not None]
+    failed_list = track_parallel_progress(_download, tasks, nproc=32)
 
     if failed_list:
         print(f'failed to download {len(failed_list)} papers.')
