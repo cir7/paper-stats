@@ -44,10 +44,9 @@ def load_paper_info(index_path: str = 'index'):
         df = pd.read_csv(fn)
 
         for _, item in tqdm.tqdm(df.iterrows(), total=len(df) - 1):
-            item['year'] = 2023
             paper = paper_info(title=item['title'],
                                conference=item['conference'],
-                               year=item['year'],
+                               year=item.get('year', 2023),
                                authors=item['authors'],
                                abstract=item['abstract'])
 
@@ -59,7 +58,7 @@ def load_paper_info(index_path: str = 'index'):
 
             paper.pdf_path = osp.join('data',
                                       f'{paper.conference}{paper.year}',
-                                      f'{paper.title}.pdf')
+                                      f'{paper.title.replace("/", " ")}.pdf')
 
             papers.append(paper)
 
@@ -88,11 +87,9 @@ def download_missing_pdf(papers):
 
     print(f'found {len(missing_list)} missing papers.')
 
-    # with Pool() as p:
     total = len(missing_list)
     tasks = [(i, total, paper) for i, paper in enumerate(missing_list)]
-    # failed_list = [r for r in p.map(_download, tasks) if r is not None]
-    failed_list = track_parallel_progress(_download, tasks, nproc=32)
+    failed_list = track_parallel_progress(_download, tasks, nproc=32, keep_order=False)
 
     if failed_list:
         print(f'failed to download {len(failed_list)} papers.')
@@ -163,14 +160,34 @@ def main():
     def _valid(paper):
 
         strong_pos_kws = [
+            'action detection',
+            'action detector',
             'action recognition',
             'action localization',
             'video understanding',
             'video recognition',
+            'video retrieval',
+            'action quality assessment'
+            'kinetics-400',
+            'kinetics 400',
+            'kinetics400',
+            'k400'
+            'kinetics-600',
+            'kinetics 600',
+            'k600'
+            'kinetics600',
+            'kinetics-700',
+            'kinetics 700',
+            'kinetics700',
+            'something-something'
+            'something something'
+            'video representation',
+            'video grounding',
+            
+
         ]
 
         pos_kws = [
-            'action',
             'spatio-temporal',
             'spatial-temporal',
             'spatiotemporal',
@@ -183,10 +200,11 @@ def main():
             'segmentation', 'point cloud', 'abstraction',
             'action unit recognition'
         ]
-
+        # search in title
         text = paper.title.lower()
-        # if isinstance(paper.abstract, str):
-        #     text = text + ' ' + paper.abstract.lower()
+        # search in abstract
+        if isinstance(paper.abstract, str):
+            text = text + ' ' + paper.abstract.lower()
 
         for kw in strong_pos_kws:
             if kw in text:
@@ -207,7 +225,7 @@ def main():
     # search in PDF
     keyword_groups = {
         '_pos0':
-        ['kinetics', 'something-something', 'ntu', 'ucf101', 'activitynet'],
+        ['kinetics', 'something-something', 'ntu', 'ucf101', 'activitynet', 'msrvtt'],
         '_neg0': [],
         'mmaction': ['mmaction'],
         'mmaction2': ['mmaction2', 'mmaction'],
@@ -221,43 +239,56 @@ def main():
     total = len(papers)
     tasks = [(i, total, keyword_groups, paper.pdf_path)
              for i, paper in enumerate(papers)]
-    with Pool() as p:
-        search_results = p.map(_search_in_pdf, tasks)
-
-    with open('mmaction2_search_results.pkl', 'wb') as f:
-        pickle.dump(search_results, f)
-
-    matched = []
-    for paper, result in zip(papers, search_results):
-        pos_keys = [k for k in result.keys() if k.startswith('_pos')]
-        neg_keys = [k for k in result.keys() if k.startswith('_neg')]
-
-        relevant = False
-        for key in pos_keys:
-            relevant |= result.pop(key)
-
-        for key in neg_keys:
-            relevant &= (~result.pop(key))
-
-        result['relevant'] = relevant
-        result = {k: int(v) for k, v in result.items()}
-        # if any(result.values()):
-        #     matched.append((paper, result))
-        matched.append((paper, result))
-
-    for name in matched[0][1].keys():
-        count = sum(result[name] for _, result in matched)
-        print(name, count)
-
-    # save to csv
+    
+     # save to csv
     paper_dicts = []
-    for paper, result in matched:
+    for paper in papers:
         d = paper.__dict__.copy()
-        d.update(result)
         paper_dicts.append(d)
 
     df = pd.DataFrame.from_dict(paper_dicts)
     df.to_csv('mmaction2_stats.csv', index=True, header=True)
+
+    search_in_pdf = False
+    if search_in_pdf:
+
+        with Pool() as p:
+            search_results = p.map(_search_in_pdf, tasks)
+
+        with open('mmaction2_search_results.pkl', 'wb') as f:
+            pickle.dump(search_results, f)
+
+        matched = []
+        for paper, result in zip(papers, search_results):
+            pos_keys = [k for k in result.keys() if k.startswith('_pos')]
+            neg_keys = [k for k in result.keys() if k.startswith('_neg')]
+
+            relevant = False
+            for key in pos_keys:
+                relevant |= result.pop(key)
+
+            for key in neg_keys:
+                relevant &= (~result.pop(key))
+
+            result['relevant'] = relevant
+            result = {k: int(v) for k, v in result.items()}
+            # if any(result.values()):
+            #     matched.append((paper, result))
+            matched.append((paper, result))
+
+        for name in matched[0][1].keys():
+            count = sum(result[name] for _, result in matched)
+            print(name, count)
+
+        # save to csv
+        paper_dicts = []
+        for paper, result in matched:
+            d = paper.__dict__.copy()
+            d.update(result)
+            paper_dicts.append(d)
+
+        df = pd.DataFrame.from_dict(paper_dicts)
+        df.to_csv('mmaction2_stats.csv', index=True, header=True)
 
 
 if __name__ == '__main__':

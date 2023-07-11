@@ -1,4 +1,5 @@
 import pandas as pd
+from pathlib import Path
 
 cloumn_dict = {
     'conf': 'conference',
@@ -6,9 +7,11 @@ cloumn_dict = {
 
 }
 
-data_df = pd.read_csv('ori_index/2023H1顶会论文汇总-CVPR.csv')
+for index in Path('ori_index').glob('*'):
 
-df = data_df.drop(columns=['title'])
-df.rename(columns=cloumn_dict, inplace=True)
-df.to_csv('index/cvpr.csv', header=True, index=False)
+    df = pd.read_csv(index)
+    if 'clean_title' in df:
+        df = df.drop(columns=['title'])
+    df.rename(columns=cloumn_dict, inplace=True)
+    df.to_csv(str(index).replace('ori_index', 'index'), header=True, index=False)
 
